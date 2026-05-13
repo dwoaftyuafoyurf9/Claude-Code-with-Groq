@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Terminal</title>
+
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: black;
+        font-family: "Courier New", monospace;
+        overflow: hidden; /* 🔥 prevents page scroll */
+    }
+
+    /* MAIN APP LAYOUT */
+    .terminal {
+        height: 100vh;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        background: black;
+    }
+
+    /* FIXED TOP IMAGE */
+    .topImage {
+        flex: 0 0 auto;
+        display: flex;
+        justify-content: center;
+        padding: 8px 0;
+        background: black;
+    }
+
+    .topImage img {
+        max-width: 140px;
+    }
+
+    /* OUTPUT SCROLL AREA */
+    .output {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .msg {
+        margin: 14px 0;
+        line-height: 1.6em;
+    }
+
+    .user {
+        color: white;
+        text-shadow:
+            -1px -1px 0 #222,
+             1px -1px 0 #222,
+            -1px  1px 0 #222,
+             1px  1px 0 #222;
+    }
+
+    .ai {
+        background: linear-gradient(90deg, #ff6a00, #ff3c00, #ff9a3c);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    /* CODE BLOCK */
+    .codebox {
+        position: relative;
+        background: black;
+        border: 1px solid white;
+        color: white;
+        padding: 12px;
+        margin: 12px 0;
+        white-space: pre;
+        overflow-x: auto;
+    }
+
+    .copyBtn {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        background: black;
+        border: 1px solid white;
+        color: white;
+        font-size: 12px;
+        padding: 4px 8px;
+        cursor: pointer;
+    }
+
+    /* INPUT BAR FIXED BOTTOM */
+    .inputLine {
+        flex: 0 0 auto;
+        display: flex;
+        padding: 10px;
+        border-top: 1px solid white;
+        background: black;
+
+        position: sticky;
+        bottom: 0;
+    }
+
+    input {
+        flex: 1;
+        background: black;
+        border: 1px solid white;
+        outline: none;
+        color: white;
+        padding: 10px;
+        font-family: monospace;
+        font-size: 14px;
+    }
+</style>
+</head>
+
+<body>
+
+<div class="terminal">
+
+    <!-- TOP IMAGE (always visible) -->
+    <div class="topImage">
+        <img src="https://plain-enam-prod-public.komododecks.com/202605/13/LYQYqojs61NjvIUOECVW/image.png">
+    </div>
+
+    <!-- OUTPUT -->
+    <div class="output" id="output"></div>
+
+    <!-- INPUT (ALWAYS VISIBLE ON MOBILE) -->
+    <div class="inputLine">
+        <input id="input" placeholder="Type..." />
+    </div>
+
+</div>
+
+<script>
+
+const output = document.getElementById("output");
+const input = document.getElementById("input");
+
+let memory = JSON.parse(localStorage.getItem("openclaw_memory") || "[]");
+let sessionReset = false;
+
+/* ---------- UTIL ---------- */
+
+function add(el){
+    output.appendChild(el);
+    output.scrollTop = output.scrollHeight;
+}
+
+/* ---------- USER ---------- */
+
+function printUser(text){
+    const d = document.createElement("div");
+    d.className = "msg user";
+    d.textContent = text;
+    add(d);
+}
+
+/* ---------- TYPE ---------- */
+
+function md(text){
+    text = text.replace(/\*\*(.*?)\*\*/g, "<b>$1</b>");
+    text = text.replace(/`(.*?)`/g, "<code>$1</code>");
+    text = text.replace(/\n/g, "<br>");
+    return text;
+}
+
+function typeText(html){
+
+    const container = document.createElement("div");
+    container.className = "msg ai";
+    add(container);
+
+    let i = 0;
+    const speed = 2;
+
+    function step(){
+        container.innerHTML = html.slice(0, i);
+        i++;
+        if(i <= html.length){
+            setTimeout(step, speed);
+        }
+    }
+
+    step();
+}
+
+/* ---------- CODE ---------- */
+
+function createCodeBlock(code){
+
+    const box = document.createElement("div");
+    box.className = "codebox";
+
+    const pre = document.createElement("div");
+    pre.textContent = code;
+
+    const btn = document.createElement("button");
+    btn.className = "copyBtn";
+    btn.textContent = "Copy";
+
+    btn.onclick = () => {
+        navigator.clipboard.writeText(code);
+        btn.textContent = "Copied!";
+        setTimeout(()=> btn.textContent = "Copy", 1000);
+    };
+
+    box.appendChild(btn);
+    box.appendChild(pre);
+
+    add(box);
+}
+
+/* ---------- AI ---------- */
+
+function renderAI(text){
+
+    const regex = /```(?:[a-zA-Z]*)\n([\s\S]*?)```|'''(?:[a-zA-Z]*)\n?([\s\S]*?)'''/g;
+
+    let last = 0, m;
+
+    function renderPlain(t){
+        typeText(md(t));
+    }
+
+    while((m = regex.exec(text)) !== null){
+
+        const before = text.slice(last, m.index);
+        if(before.trim()) renderPlain(before.trim());
+
+        const code = (m[1] || m[2] || "").trim();
+        createCodeBlock(code);
+
+        last = m.index + m[0].length;
+    }
+
+    const rest = text.slice(last).trim();
+    if(rest) renderPlain(rest);
+}
+
+/* ---------- GROQ ---------- */
+
+async function askGroq(prompt){
+
+    const key = localStorage.getItem("groq_api_key");
+    if(!key) return "Missing API key. Use /api YOUR_KEY";
+
+    const SYSTEM_PROMPT = `
+You are a universal AI assistant Called Claude Code Made by Anthropic, Model is Sonnet 4.1
+Be helpful, clear, and detailed, Messages must Exceed 10 Lines
+`;
+
+    const messages = [{ role:"system", content:SYSTEM_PROMPT }];
+
+    if(!sessionReset){
+        messages.push(...memory.flatMap(m => ([
+            { role:"user", content:m.user },
+            { role:"assistant", content:m.ai }
+        ])));
+    }
+
+    messages.push({ role:"user", content:prompt });
+
+    const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json",
+            "Authorization":"Bearer " + key
+        },
+        body:JSON.stringify({
+            model:"llama-3.3-70b-versatile",
+            messages
+        })
+    });
+
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "Error";
+}
+
+/* ---------- INPUT ---------- */
+
+input.addEventListener("keydown", async (e)=>{
+
+    if(e.key !== "Enter") return;
+
+    const text = input.value.trim();
+    if(!text) return;
+
+    input.value = "";
+
+    printUser(text);
+
+    if(text.startsWith("/api ")){
+        localStorage.setItem("groq_api_key", text.replace("/api ","").trim());
+        return;
+    }
+
+    if(text === "/clear"){
+        output.innerHTML = "";
+        memory = [];
+        localStorage.setItem("openclaw_memory", "[]");
+        return;
+    }
+
+    if(text === "/drop"){
+        memory = [];
+        sessionReset = true;
+        localStorage.setItem("openclaw_memory", "[]");
+        output.innerHTML = "";
+        return;
+    }
+
+    const reply = await askGroq(text);
+
+    renderAI(reply);
+
+    memory.push({ user:text, ai:reply });
+    localStorage.setItem("openclaw_memory", JSON.stringify(memory));
+
+    sessionReset = false;
+});
+
+</script>
+
+</body>
+</html>
