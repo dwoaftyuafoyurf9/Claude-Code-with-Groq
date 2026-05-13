@@ -1,5 +1,7 @@
 # Claude Code With Groq
 
+https://dwoaftyuafoyurf9.github.io/Claude-Code-with-Groq/
+
 Note: This isn't running Claude Code
 its a Groq Model
 
