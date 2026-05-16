@@ -173,7 +173,7 @@ function typeText(html){
     add(container);
 
     let i = 0;
-    const speed = 2;
+    const speed = 5;
 
     function step(){
         container.innerHTML = html.slice(0, i);
@@ -248,7 +248,7 @@ async function askGroq(prompt){
 
     const SYSTEM_PROMPT = `
 You are a universal AI assistant Called Claude Code Made by Anthropic, Model is Sonnet 4.1
-Be helpful, clear, and detailed, Messages must Exceed 50 Lines
+Be helpful, clear, and detailed, Messages must Exceed 10 Lines
 `;
 
     const messages = [{ role:"system", content:SYSTEM_PROMPT }];
